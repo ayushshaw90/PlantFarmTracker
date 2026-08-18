@@ -495,8 +495,146 @@ update_dashboard()
 pn.state.add_periodic_callback(update_dashboard, period=15000)
 
 # ---------------------------------------------------------------------------
-# Layout using FastListTemplate for a polished dark-themed dashboard
+# Layout using FastListTemplate with radio-button navigation
 # ---------------------------------------------------------------------------
+
+# --- Build section panels (visibility-toggled) ---
+overview_section = pn.Column(
+    pn.pane.HTML(
+        """
+        <div style="padding: 12px 0 4px;">
+            <h2 style="margin:0; color:#e2e8f0; font-weight:700;">📊 Overview</h2>
+            <p style="color:#64748b; font-size:13px; margin-top:4px;">
+                At-a-glance stats and live sensor charts for all selected plants.
+            </p>
+        </div>
+        """
+    ),
+    summary_pane,
+    pn.layout.Divider(),
+    pn.pane.HTML(
+        "<h3 style='margin:0; color:#22c55e; font-weight:600;'>💧 Soil Moisture Over Time</h3>"
+    ),
+    moisture_pane,
+    pn.layout.Divider(),
+    pn.pane.HTML(
+        "<h3 style='margin:0; color:#3b82f6; font-weight:600;'>🌡️ Temperature Over Time</h3>"
+    ),
+    temperature_pane,
+    sizing_mode="stretch_width",
+    visible=True,
+)
+
+forecast_section = pn.Column(
+    pn.pane.HTML(
+        """
+        <div style="padding: 12px 0 4px;">
+            <h2 style="margin:0; color:#e2e8f0; font-weight:700;">🔮 Time Series Forecast</h2>
+            <p style="color:#64748b; font-size:13px; margin-top:4px;">
+                Predict future moisture and temperature using Holt-Winters Exponential Smoothing.
+                Select a plant and horizon in the sidebar, then click <b style="color:#f59e0b;">Run Forecast</b>.
+            </p>
+        </div>
+        """,
+    ),
+    forecast_status,
+    pn.pane.HTML(
+        "<h3 style='margin:0; color:#22c55e; font-weight:600;'>💧 Moisture Forecast</h3>"
+    ),
+    forecast_moisture_pane,
+    pn.layout.Divider(),
+    pn.pane.HTML(
+        "<h3 style='margin:0; color:#3b82f6; font-weight:600;'>🌡️ Temperature Forecast</h3>"
+    ),
+    forecast_temperature_pane,
+    sizing_mode="stretch_width",
+    visible=False,
+)
+
+data_section = pn.Column(
+    pn.pane.HTML(
+        """
+        <div style="padding: 12px 0 4px;">
+            <h2 style="margin:0; color:#e2e8f0; font-weight:700;">📋 Raw Data</h2>
+            <p style="color:#64748b; font-size:13px; margin-top:4px;">
+                Browse, sort, and paginate through all sensor readings.
+            </p>
+        </div>
+        """
+    ),
+    table_widget,
+    sizing_mode="stretch_width",
+    visible=False,
+)
+
+# --- Navigation via RadioButtonGroup ---
+NAV_OPTIONS = ["📊 Overview", "🔮 Forecast", "📋 Data"]
+_sections = [overview_section, forecast_section, data_section]
+
+nav_buttons = pn.widgets.RadioButtonGroup(
+    name="Navigation",
+    options=NAV_OPTIONS,
+    value=NAV_OPTIONS[0],
+    button_type="success",
+    sizing_mode="stretch_width",
+)
+
+
+def _switch_section(event):
+    idx = NAV_OPTIONS.index(event.new)
+    for i, sec in enumerate(_sections):
+        sec.visible = (i == idx)
+
+
+nav_buttons.param.watch(_switch_section, "value")
+
+# --- Navbar bar with branding + status ---
+navbar_html = pn.pane.HTML(
+    """
+    <style>
+        .nav-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 4px;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+        }
+        .nav-header .brand {
+            font-size: 16px;
+            font-weight: 700;
+            color: #e2e8f0;
+            letter-spacing: 0.3px;
+        }
+        .nav-header .status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #64748b;
+        }
+        .nav-header .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #22c55e;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+            50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+        }
+    </style>
+    <div class="nav-header">
+        <span class="brand">🌱 PlantSense</span>
+        <div class="status">
+            <div class="status-dot"></div>
+            Live · Auto-refresh 15s
+        </div>
+    </div>
+    """,
+    sizing_mode="stretch_width",
+    height=40,
+)
 
 template = pn.template.FastListTemplate(
     title="🌱 Plant Sensor Dashboard",
@@ -528,43 +666,12 @@ template = pn.template.FastListTemplate(
         forecast_btn,
     ],
     main=[
-        pn.Row(
-            pn.pane.HTML(
-                "<h2 style='margin:0; color:#e2e8f0; font-weight:700;'>📊 Overview</h2>"
-            ),
-        ),
-        summary_pane,
+        navbar_html,
+        nav_buttons,
         pn.layout.Divider(),
-        pn.Row(
-            pn.pane.HTML(
-                "<h2 style='margin:0; color:#e2e8f0; font-weight:700;'>💧 Soil Moisture</h2>"
-            ),
-        ),
-        moisture_pane,
-        pn.layout.Divider(),
-        pn.Row(
-            pn.pane.HTML(
-                "<h2 style='margin:0; color:#e2e8f0; font-weight:700;'>🌡️ Temperature</h2>"
-            ),
-        ),
-        temperature_pane,
-        pn.layout.Divider(),
-        pn.Row(
-            pn.pane.HTML(
-                "<h2 style='margin:0; color:#e2e8f0; font-weight:700;'>"
-                "🔮 Time Series Forecast</h2>"
-            ),
-        ),
-        forecast_status,
-        forecast_moisture_pane,
-        forecast_temperature_pane,
-        pn.layout.Divider(),
-        pn.Row(
-            pn.pane.HTML(
-                "<h2 style='margin:0; color:#e2e8f0; font-weight:700;'>📋 Raw Data</h2>"
-            ),
-        ),
-        table_widget,
+        overview_section,
+        forecast_section,
+        data_section,
     ],
     accent=ACCENT,
     theme="dark",
@@ -573,3 +680,4 @@ template = pn.template.FastListTemplate(
 )
 
 template.servable()
+
