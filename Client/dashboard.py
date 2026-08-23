@@ -12,6 +12,7 @@ import datetime
 import os
 import warnings
 
+import folium
 import numpy as np
 import pandas as pd
 import panel as pn
@@ -83,6 +84,17 @@ def fetch_summary(plant_ids=None):
         return resp.json()
     except Exception as e:
         print(f"Error fetching summary: {e}")
+        return []
+
+
+def fetch_plant_locations():
+    """Get plant location metadata from the backend."""
+    try:
+        resp = requests.get(f"{API_BASE}/api/plants/locations", timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        print(f"Error fetching plant locations: {e}")
         return []
 
 
@@ -638,9 +650,130 @@ data_section = pn.Column(
     visible=False,
 )
 
+
+# ---------------------------------------------------------------------------
+# Map section — interactive Folium map showing plant sensor locations
+# ---------------------------------------------------------------------------
+
+def _build_map_html():
+    """Build a Folium map with plant markers styled to match the dashboard palette."""
+    locations = fetch_plant_locations()
+    stats = fetch_summary()
+
+    # Build a lookup for latest readings
+    stat_lookup = {s["device_id"]: s for s in stats}
+
+    if not locations:
+        return "<p style='color:#94a3b8; padding:60px; text-align:center;'>No plant location data available.</p>"
+
+    # Center map on the average of all locations
+    avg_lat = sum(loc["lat"] for loc in locations) / len(locations)
+    avg_lng = sum(loc["lng"] for loc in locations) / len(locations)
+
+    m = folium.Map(
+        location=[avg_lat, avg_lng],
+        zoom_start=16,
+        tiles="CartoDB dark_matter",
+        attr="CartoDB",
+    )
+
+    for i, loc in enumerate(locations):
+        device_id = loc["device_id"]
+        name = loc.get("name", device_id)
+        color = PALETTE[i % len(PALETTE)]
+        stat = stat_lookup.get(device_id, {})
+
+        moisture = stat.get("latest_moisture", "—")
+        temp = stat.get("latest_temperature", "—")
+        count = stat.get("count", 0)
+
+        popup_html = f"""
+        <div style="
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #1a1f2e;
+            color: #e2e8f0;
+            border-radius: 12px;
+            padding: 16px 18px;
+            min-width: 200px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        ">
+            <div style="font-size:15px; font-weight:700; color:{color}; margin-bottom:10px;">
+                🌱 {name}
+            </div>
+            <div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">
+                {device_id}
+            </div>
+            <hr style="border:none; border-top:1px solid #2d3548; margin:8px 0;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span style="color:#94a3b8;">💧 Moisture</span>
+                <span style="font-weight:700; color:#22c55e;">{moisture}%</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span style="color:#94a3b8;">🌡️ Temp</span>
+                <span style="font-weight:700; color:#3b82f6;">{temp}°C</span>
+            </div>
+            <div style="display:flex; justify-content:space-between;">
+                <span style="color:#94a3b8;">📊 Readings</span>
+                <span style="font-weight:600; color:#e2e8f0;">{count:,}</span>
+            </div>
+            <div style="margin-top:8px; font-size:10px; color:#475569;">
+                📍 {loc['lat']:.4f}, {loc['lng']:.4f}
+            </div>
+        </div>
+        """
+
+        # Marker with matching palette color
+        color_map = {
+            "#22c55e": "green",
+            "#3b82f6": "blue",
+            "#f59e0b": "orange",
+            "#ef4444": "red",
+            "#8b5cf6": "purple",
+            "#06b6d4": "cadetblue",
+        }
+        marker_color = color_map.get(color, "green")
+
+        folium.Marker(
+            location=[loc["lat"], loc["lng"]],
+            popup=folium.Popup(popup_html, max_width=280),
+            tooltip=f"{name} ({device_id})",
+            icon=folium.Icon(color=marker_color, icon="leaf", prefix="fa"),
+        ).add_to(m)
+
+    # Wrap in an iframe so the full Folium HTML document renders correctly
+    # inside Panel's HTML pane (Folium outputs a full <html> document).
+    import html as html_mod
+    raw_html = m._repr_html_()
+    escaped = html_mod.escape(raw_html)
+    return f'<iframe srcdoc="{escaped}" style="width:100%; height:520px; border:none; border-radius:12px;"></iframe>'
+
+
+map_pane = pn.pane.HTML(
+    _build_map_html(),
+    sizing_mode="stretch_width",
+    height=540,
+)
+
+map_section = pn.Column(
+    pn.pane.HTML(
+        """
+        <div style="padding: 12px 0 4px;">
+            <h2 style="margin:0; color:#e2e8f0; font-weight:700;">🗺️ Sensor Location Map</h2>
+            <p style="color:#64748b; font-size:13px; margin-top:4px;">
+                Interactive map showing the physical locations of all plant sensors.
+                Click a marker to see the latest readings.
+            </p>
+        </div>
+        """
+    ),
+    map_pane,
+    sizing_mode="stretch_width",
+    visible=False,
+)
+
 # --- Navigation via RadioButtonGroup ---
-NAV_OPTIONS = ["📊 Overview", "🔮 Forecast", "📋 Data"]
-_sections = [overview_section, forecast_section, data_section]
+NAV_OPTIONS = ["📊 Overview", "🗺️ Map", "🔮 Forecast", "📋 Data"]
+_sections = [overview_section, map_section, forecast_section, data_section]
 
 nav_buttons = pn.widgets.RadioButtonGroup(
     name="Navigation",
@@ -740,9 +873,14 @@ template = pn.template.FastListTemplate(
         navbar_html,
         nav_buttons,
         pn.layout.Divider(),
-        overview_section,
-        forecast_section,
-        data_section,
+        pn.Column(
+            overview_section,
+            map_section,
+            forecast_section,
+            data_section,
+            sizing_mode="stretch_width",
+            margin=0,
+        ),
     ],
     accent=ACCENT,
     theme="dark",

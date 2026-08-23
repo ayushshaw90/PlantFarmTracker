@@ -139,6 +139,33 @@ def get_plants():
     return [r[0] for r in rows]
 
 
+# Static plant location metadata — matches the publisher / seed configs
+PLANT_LOCATIONS = {
+    "plant-001": {"name": "Greenhouse A", "lat": 12.9352, "lng": 77.6245},
+    "plant-002": {"name": "Rooftop Garden", "lat": 12.9378, "lng": 77.6270},
+    "plant-003": {"name": "Open Field B", "lat": 12.9340, "lng": 77.6290},
+}
+
+
+@app.get("/api/plants/locations")
+def get_plant_locations():
+    """Return location metadata for each known plant."""
+    with db_lock:
+        cursor.execute("SELECT DISTINCT device_id FROM messages ORDER BY device_id")
+        device_ids = [r[0] for r in cursor.fetchall()]
+
+    result = []
+    for did in device_ids:
+        loc = PLANT_LOCATIONS.get(did, {"name": did, "lat": 0, "lng": 0})
+        result.append({
+            "device_id": did,
+            "name": loc["name"],
+            "lat": loc["lat"],
+            "lng": loc["lng"],
+        })
+    return result
+
+
 @app.get("/api/data")
 def get_filtered_data(
     plant_id: Optional[str] = None,

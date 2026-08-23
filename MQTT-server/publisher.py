@@ -20,9 +20,21 @@ BROKER = "localhost"
 PORT = 1883
 
 PLANTS = {
-    "plant-001": {"moisture_range": (40, 70), "temp_range": (22, 32)},
-    "plant-002": {"moisture_range": (30, 55), "temp_range": (18, 28)},
-    "plant-003": {"moisture_range": (50, 80), "temp_range": (25, 38)},
+    "plant-001": {
+        "moisture_range": (40, 70),
+        "temp_range": (22, 32),
+        "location": {"name": "Greenhouse A", "lat": 12.9352, "lng": 77.6245},
+    },
+    "plant-002": {
+        "moisture_range": (30, 55),
+        "temp_range": (18, 28),
+        "location": {"name": "Rooftop Garden", "lat": 12.9378, "lng": 77.6270},
+    },
+    "plant-003": {
+        "moisture_range": (50, 80),
+        "temp_range": (25, 38),
+        "location": {"name": "Open Field B", "lat": 12.9340, "lng": 77.6290},
+    },
 }
 
 
