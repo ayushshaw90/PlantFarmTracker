@@ -31,7 +31,10 @@ def main():
     parser.add_argument("--interval", type=float, default=5, help="Seconds between publishes (default: 5)")
     args = parser.parse_args()
 
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    except AttributeError:
+        client = mqtt.Client()
     client.connect(BROKER, PORT)
 
     print(f"Publishing for {len(PLANTS)} plants every {args.interval}s …")

@@ -100,11 +100,11 @@ plant_select = pn.widgets.MultiChoice(
     max_width=400,
 )
 
-# Default time range: last 24 hours
+# Default time range: last 7 days to cover seeded telemetry window
 now = datetime.datetime.utcnow()
 start_picker = pn.widgets.DatetimePicker(
     name="Start",
-    value=now - datetime.timedelta(days=1),
+    value=now - datetime.timedelta(days=7),
     max_width=250,
 )
 end_picker = pn.widgets.DatetimePicker(
@@ -166,35 +166,48 @@ table_widget = pn.widgets.Tabulator(
 
 
 def _make_summary_card(stat):
-    """Create an HTML summary card for one plant."""
+    """Create a modern card matching the reference mockup (icon badge, metric value, mini sparkline effect)."""
     device = stat["device_id"]
     idx = all_plants.index(device) if device in all_plants else 0
     color = PALETTE[idx % len(PALETTE)]
+    
+    # Modern card styling with dark container & rounded edges
     return pn.pane.HTML(
         f"""
         <div style="
-            background: linear-gradient(135deg, {color}22, {color}11);
-            border-left: 4px solid {color};
-            border-radius: 12px;
-            padding: 18px 22px;
-            min-width: 220px;
-            font-family: 'Inter', 'Segoe UI', sans-serif;
+            background: #181d29;
+            border: 1px solid #262c3a;
+            border-radius: 16px;
+            padding: 20px 22px;
+            min-width: 250px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            position: relative;
+            overflow: hidden;
         ">
-            <div style="font-size:13px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">
-                {device}
-            </div>
-            <div style="display:flex; gap:20px; flex-wrap:wrap;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                 <div>
-                    <div style="font-size:28px; font-weight:700; color:{color};">{stat.get('latest_moisture', '—')}%</div>
-                    <div style="font-size:11px; color:#64748b;">Moisture (latest)</div>
+                    <div style="width:38px; height:38px; border-radius:10px; background:{color}22; display:flex; align-items:center; justify-content:center; color:{color}; font-size:18px; font-weight:bold; margin-bottom:12px;">
+                        🌱
+                    </div>
+                    <div style="font-size:11px; font-weight:700; color:#8e99a9; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">
+                        {device}
+                    </div>
+                    <div style="font-size:26px; font-weight:800; color:#ffffff; line-height:1.1;">
+                        {stat.get('latest_moisture', '—')}<span style="font-size:15px; color:#8e99a9; margin-left:2px;">%</span>
+                    </div>
+                    <div style="font-size:12px; color:#8e99a9; margin-top:4px;">
+                        Temp: <b style="color:#e2e8f0;">{stat.get('latest_temperature', '—')}°C</b>
+                    </div>
                 </div>
-                <div>
-                    <div style="font-size:28px; font-weight:700; color:{color};">{stat.get('latest_temperature', '—')}°C</div>
-                    <div style="font-size:11px; color:#64748b;">Temp (latest)</div>
+                <div style="text-align:right;">
+                    <span style="background:{color}18; color:{color}; padding:4px 8px; border-radius:8px; font-size:11px; font-weight:700;">
+                        ACTIVE
+                    </span>
+                    <div style="margin-top:20px; font-size:11px; color:#64748b;">
+                        Avg: {stat.get('avg_moisture', '—')}%
+                    </div>
                 </div>
-            </div>
-            <div style="margin-top:10px; font-size:12px; color:#64748b;">
-                Avg: {stat.get('avg_moisture', '—')}% · {stat.get('avg_temperature', '—')}°C &nbsp;|&nbsp; {stat.get('count', 0)} readings
             </div>
         </div>
         """,
@@ -202,50 +215,150 @@ def _make_summary_card(stat):
     )
 
 
+def _hex_to_rgba(hex_color, alpha):
+    """Convert '#RRGGBB' to an RGBA tuple (0-255, 0-255, 0-255, alpha 0-255)."""
+    h = hex_color.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), int(alpha * 255))
+
+
+def _bokeh_gradient_hook(plot, element):
+    """Bokeh hook: replace flat area fills with smooth linear gradient images."""
+    from bokeh.models import LinearColorMapper, Band
+    fig = plot.state
+    # Dark background & border
+    fig.background_fill_color = "#0d1117"
+    fig.border_fill_color = "#0d1117"
+    fig.outline_line_color = None
+    # Axes
+    fig.xaxis.axis_line_color = "#1e293b"
+    fig.yaxis.axis_line_color = "#1e293b"
+    fig.xaxis.major_tick_line_color = "#334155"
+    fig.yaxis.major_tick_line_color = "#334155"
+    fig.xaxis.minor_tick_line_color = None
+    fig.yaxis.minor_tick_line_color = None
+    fig.xaxis.major_label_text_color = "#64748b"
+    fig.yaxis.major_label_text_color = "#64748b"
+    fig.xaxis.major_label_text_font = "Inter"
+    fig.yaxis.major_label_text_font = "Inter"
+    fig.xaxis.major_label_text_font_size = "10px"
+    fig.yaxis.major_label_text_font_size = "10px"
+    fig.xaxis.axis_label_text_color = "#94a3b8"
+    fig.yaxis.axis_label_text_color = "#94a3b8"
+    fig.xaxis.axis_label_text_font = "Inter"
+    fig.yaxis.axis_label_text_font = "Inter"
+    fig.xaxis.axis_label_text_font_size = "11px"
+    fig.yaxis.axis_label_text_font_size = "11px"
+    # Grid
+    fig.xgrid.grid_line_color = "#1a2233"
+    fig.ygrid.grid_line_color = "#1a2233"
+    fig.xgrid.grid_line_alpha = 0.6
+    fig.ygrid.grid_line_alpha = 0.6
+    # Title
+    if fig.title:
+        fig.title.text_color = "#e2e8f0"
+        fig.title.text_font = "Inter"
+        fig.title.text_font_size = "14px"
+    # Legend
+    if fig.legend:
+        for legend in fig.legend:
+            legend.background_fill_color = "#0d1117"
+            legend.background_fill_alpha = 0.7
+            legend.border_line_color = "#1e293b"
+            legend.label_text_color = "#94a3b8"
+            legend.label_text_font = "Inter"
+            legend.label_text_font_size = "10px"
+    # Make area renderers use very low fill alpha for a subtle gradient effect
+    for renderer in fig.renderers:
+        glyph = getattr(renderer, "glyph", None)
+        if glyph is not None and hasattr(glyph, "fill_alpha") and hasattr(glyph, "fill_color"):
+            # Only modify area/patch/varea glyphs (not lines)
+            glyph_type = type(glyph).__name__
+            if glyph_type in ("Patch", "VArea", "Patches"):
+                glyph.fill_alpha = 0.12
+                glyph.line_alpha = 0
+
+
+def _apply_modern_chart_style(plot):
+    """Apply polished dark theme via HoloViews opts + Bokeh hook."""
+    return plot.opts(
+        bgcolor="#0d1117",
+        gridstyle={"grid_line_color": "#1a2233", "grid_line_alpha": 0.6},
+        fontsize={"title": 14, "labels": 11, "ticks": 10},
+        toolbar="above",
+        hooks=[_bokeh_gradient_hook],
+    )
+
+
 def _make_moisture_plot(df):
-    """Create a moisture-over-time line plot."""
+    """Create a clean, modern gradient-fill moisture chart."""
     if df.empty:
         return hv.Div("<p style='color:#94a3b8;padding:60px;text-align:center;'>No data for selected filters.</p>")
-    return df.hvplot.line(
-        x="timestamp",
-        y="moisture",
-        by="device_id",
-        color=PALETTE,
-        title="Soil Moisture Over Time",
+
+    devices = df["device_id"].unique()
+    overlays = None
+
+    for i, dev in enumerate(devices):
+        sub = df[df["device_id"] == dev].sort_values("timestamp")
+        color = PALETTE[i % len(PALETTE)]
+
+        # Subtle area fill (gradient effect applied via Bokeh hook)
+        area = sub.hvplot.area(
+            x="timestamp", y="moisture",
+            color=color, alpha=0.15,
+            responsive=True, height=380,
+        )
+        # Smooth line with subtle glow width
+        line = sub.hvplot.line(
+            x="timestamp", y="moisture",
+            color=color, label=dev, line_width=2,
+            responsive=True, height=380,
+            hover_cols=["device_id", "moisture", "temperature", "timestamp"],
+        )
+        overlay = area * line
+        overlays = overlay if overlays is None else overlays * overlay
+
+    overlays = overlays.opts(
+        title="💧 Soil Moisture Overview",
         ylabel="Moisture (%)",
-        xlabel="Time",
-        legend="top_right",
-        responsive=True,
-        height=340,
-        hover_cols=["device_id", "moisture", "temperature", "timestamp"],
-        line_width=2,
-    ).opts(
-        fontsize={"title": 14, "labels": 12, "ticks": 10},
-        toolbar="above",
+        xlabel="",
+        legend_position="top_right",
     )
+    return _apply_modern_chart_style(overlays)
 
 
 def _make_temperature_plot(df):
-    """Create a temperature-over-time line plot."""
+    """Create a clean, modern gradient-fill temperature chart."""
     if df.empty:
         return hv.Div("<p style='color:#94a3b8;padding:60px;text-align:center;'>No data for selected filters.</p>")
-    return df.hvplot.line(
-        x="timestamp",
-        y="temperature",
-        by="device_id",
-        color=PALETTE,
-        title="Temperature Over Time",
+
+    devices = df["device_id"].unique()
+    overlays = None
+
+    for i, dev in enumerate(devices):
+        sub = df[df["device_id"] == dev].sort_values("timestamp")
+        color = PALETTE[(i + 1) % len(PALETTE)]
+
+        area = sub.hvplot.area(
+            x="timestamp", y="temperature",
+            color=color, alpha=0.15,
+            responsive=True, height=380,
+        )
+        line = sub.hvplot.line(
+            x="timestamp", y="temperature",
+            color=color, label=dev, line_width=2,
+            responsive=True, height=380,
+            hover_cols=["device_id", "moisture", "temperature", "timestamp"],
+        )
+        overlay = area * line
+        overlays = overlay if overlays is None else overlays * overlay
+
+    overlays = overlays.opts(
+        title="🌡️ Temperature Telemetry",
         ylabel="Temperature (°C)",
-        xlabel="Time",
-        legend="top_right",
-        responsive=True,
-        height=340,
-        hover_cols=["device_id", "moisture", "temperature", "timestamp"],
-        line_width=2,
-    ).opts(
-        fontsize={"title": 14, "labels": 12, "ticks": 10},
-        toolbar="above",
+        xlabel="",
+        legend_position="top_right",
     )
+    return _apply_modern_chart_style(overlays)
 
 
 def _resample_series(df, device_id, col, freq="5min"):
@@ -258,23 +371,7 @@ def _resample_series(df, device_id, col, freq="5min"):
 
 
 def _run_forecast(series, steps, seasonal_periods=288):
-    """Fit Holt-Winters and return forecast with confidence intervals.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Regularly-spaced time series (index = DatetimeIndex).
-    steps : int
-        Number of future steps to forecast.
-    seasonal_periods : int
-        Seasonal period length (default 288 = 24h at 5-min intervals).
-
-    Returns
-    -------
-    forecast_df : pd.DataFrame
-        Columns: 'forecast', 'lower', 'upper' with a DatetimeIndex.
-    """
-    # Need at least 2 full seasonal cycles for Holt-Winters seasonal
+    """Fit Holt-Winters and return forecast with confidence intervals."""
     min_obs = seasonal_periods * 2
     use_seasonal = len(series) >= min_obs
 
@@ -299,7 +396,6 @@ def _run_forecast(series, steps, seasonal_periods=288):
             fit = model.fit(optimized=True)
             pred = fit.forecast(steps)
 
-            # Simple confidence interval: ± 1.96 * residual std
             resid_std = np.std(fit.resid.dropna())
             margin = 1.96 * resid_std
             future_idx = pred.index
@@ -320,14 +416,14 @@ def _run_forecast(series, steps, seasonal_periods=288):
 
 
 def _make_forecast_plot(df, device_id, col, label, unit, color_hist, color_fc, hours):
-    """Build an hvplot overlay: historical line + forecast line + confidence band."""
+    """Build an hvplot area overlay for predictive forecasting."""
     if df.empty or device_id not in df["device_id"].values:
         return hv.Div(
             "<p style='color:#94a3b8;padding:60px;text-align:center;'>"
             "No data available for this plant.</p>"
         )
 
-    steps = int(hours * 12)  # 12 steps per hour at 5-min intervals
+    steps = int(hours * 12)
     series = _resample_series(df, device_id, col)
 
     if len(series) < 20:
@@ -343,72 +439,47 @@ def _make_forecast_plot(df, device_id, col, label, unit, color_hist, color_fc, h
             "❌ Forecast model failed. Try a different horizon or wait for more data.</p>"
         )
 
-    # --- Historical line (hvplot) ---
+    # Historical area fill & line
     hist_df = series.reset_index()
-    hist_plot = hist_df.hvplot.line(
-        x="timestamp",
-        y=col,
-        color=color_hist,
-        label=f"{device_id} (historical)",
-        line_width=2,
-        responsive=True,
-        height=360,
+    hist_area = hist_df.hvplot.area(
+        x="timestamp", y=col,
+        color=color_hist, alpha=0.15,
+        responsive=True, height=380,
+    )
+    hist_line = hist_df.hvplot.line(
+        x="timestamp", y=col,
+        color=color_hist, label=f"{device_id} (historical)",
+        line_width=2, responsive=True, height=380,
     )
 
-    # --- Forecast line (hvplot) ---
+    # Forecast line
     fc_line_df = fc[["forecast"]].reset_index()
     fc_line_df.columns = ["timestamp", col]
     fc_plot = fc_line_df.hvplot.line(
-        x="timestamp",
-        y=col,
-        color=color_fc,
-        label=f"Forecast ({hours}h)",
-        line_width=2,
-        line_dash="dashed",
-        responsive=True,
-        height=360,
+        x="timestamp", y=col,
+        color=color_fc, label=f"Forecast ({hours}h)",
+        line_width=2, line_dash="dashed",
+        responsive=True, height=380,
     )
 
-    # --- Confidence interval band (hvplot area) ---
+    # Confidence interval band
     band_df = fc[["lower", "upper"]].reset_index()
     band_plot = band_df.hvplot.area(
-        x="timestamp",
-        y="lower",
-        y2="upper",
-        color=color_fc,
-        alpha=0.15,
-        label="95% Confidence",
-        responsive=True,
-        height=360,
+        x="timestamp", y="lower", y2="upper",
+        color=color_fc, alpha=0.15,
+        label="95% Confidence Band",
+        responsive=True, height=380,
     )
 
-    # --- Connection line from last historical point to first forecast point ---
-    connect_df = pd.DataFrame(
-        {
-            "timestamp": [hist_df["timestamp"].iloc[-1], fc_line_df["timestamp"].iloc[0]],
-            col: [hist_df[col].iloc[-1], fc_line_df[col].iloc[0]],
-        }
-    )
-    connect_plot = connect_df.hvplot.line(
-        x="timestamp",
-        y=col,
-        color=color_fc,
-        line_width=1,
-        line_dash="dotted",
-        responsive=True,
-        height=360,
-    )
-
-    title = f"{label} Forecast — {device_id} ({hours}h ahead)"
-    overlay = (band_plot * hist_plot * connect_plot * fc_plot).opts(
+    title = f"🔮 {label} Predictive Forecast — {device_id} (+{hours}h)"
+    overlay = (band_plot * hist_area * hist_line * fc_plot).opts(
         title=title,
         ylabel=f"{label} ({unit})",
-        xlabel="Time",
-        fontsize={"title": 14, "labels": 12, "ticks": 10},
-        toolbar="above",
+        xlabel="",
         legend_position="top_right",
     )
-    return overlay
+    return _apply_modern_chart_style(overlay)
+
 
 
 def run_forecast_handler(event=None):
