@@ -2,6 +2,8 @@
 
 ![PlantSense Dashboard Banner](https://res.cloudinary.com/xxn0d121/image/upload/f_auto,q_auto/Screenshot_2026-08-18_at_12.09.15_PM)
 
+🔗 **Live Demo**: [https://plantfarmtracker.onrender.com/](https://plantfarmtracker.onrender.com/)
+
 **PlantSense** is a full-stack, real-time IoT monitoring and predictive analytics platform for multi-plant sensor networks. It ingests live soil moisture and temperature telemetry over MQTT, persists data in a lightweight SQLite database via FastAPI, and presents interactive visual insights and **time-series forecasting using `hvplot` and `Holt-Winters Exponential Smoothing`**.
 
 ---
