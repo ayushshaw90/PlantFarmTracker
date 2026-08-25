@@ -34,7 +34,13 @@
 
 ```
 PanelProject/
-├── main.py              # Consolidated single-file application stack (FastAPI, MQTT, Panel UI, Seeding)
+├── main.py              # Orchestrator entrypoint to start backend, publisher, and serving panel UI
+├── plantsense/          # Core application package folder
+│   ├── config.py        # Centralized configurations, colors, location and seed data
+│   ├── database.py      # SQLite connectionpool, schema creation, seeding and insertion methods
+│   ├── backend.py       # FastAPI web endpoints, and background MQTT subscriber thread
+│   ├── publisher.py     # Background thread simulating sensor MQTT publishes
+│   └── dashboard.py     # Panel interactive widgets, forecasting models, folium map, and layouts
 ├── mqtt_data.db         # SQLite database file containing telemetry data
 ├── requirements.txt     # Python package dependencies
 └── README.md            # Project documentation
@@ -56,10 +62,18 @@ pip install -r requirements.txt
 
 ### 2. Start all services in a single command
 
-Run the unified application stack:
+Run the unified application stack.
+
+If your MQTT broker requires authentication credentials (like the default HiveMQ Cloud broker):
 
 ```bash
-python main.py
+python main.py --mqtt-user <your_username> --mqtt-password <your_password>
+```
+
+If you are running a local unsecured broker (e.g. localhost on port 1883):
+
+```bash
+python main.py --mqtt-broker localhost --mqtt-port 1883
 ```
 
 This single command starts the entire project:
@@ -74,6 +88,10 @@ This single command starts the entire project:
 - `--no-publisher`: Run the backend and dashboard without starting the simulated MQTT sensor publisher.
 - `--backend-port <int>`: Specify a custom FastAPI backend port (default: 8000).
 - `--dashboard-port <int>`: Specify a custom Panel dashboard port (default: 5006).
+- `--mqtt-broker <str>`: MQTT broker URL (default: `bdcc8a3a07274263b22ab1ee2247182e.s1.eu.hivemq.cloud`).
+- `--mqtt-port <int>`: MQTT broker port (default: `8883` which automatically activates SSL/TLS encryption).
+- `--mqtt-user <str>`: MQTT broker authentication username.
+- `--mqtt-password <str>`: MQTT broker authentication password.
 
 ---
 
