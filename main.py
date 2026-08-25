@@ -57,13 +57,23 @@ def main() -> int:
     parser.add_argument("--mqtt-password", type=str, default=None, help="MQTT password (optional).")
     args = parser.parse_args()
 
-    # Find open ports
-    backend_port = find_free_port(args.backend_port)
-    dashboard_port = find_free_port(args.dashboard_port)
+    # Find open ports, adapting if running in a cloud environment like Render where PORT is assigned
+    env_port = os.environ.get("PORT")
+    if env_port:
+        # On Render, bind the publicly accessible Panel dashboard to the assigned PORT
+        dashboard_port = int(env_port)
+        # Run FastAPI on an internal port (e.g. 8000 or 8001 if 8000 is occupied by the dashboard)
+        start_backend_port = 8000 if dashboard_port != 8000 else 8001
+        backend_port = find_free_port(start_backend_port)
+    else:
+        # Local development
+        backend_port = find_free_port(args.backend_port)
+        dashboard_port = find_free_port(args.dashboard_port)
 
     # Set up global base URLs and environments (read by backend & dashboard)
     os.environ["API_BASE"] = f"http://localhost:{backend_port}"
-    os.environ["PORT"] = str(backend_port)
+    # Ensure PORT points to the Panel dashboard port so Render knows where to route traffic
+    os.environ["PORT"] = str(dashboard_port)
     os.environ["PANEL_URL"] = f"http://localhost:{dashboard_port}"
     os.environ["MQTT_BROKER"] = args.mqtt_broker
     os.environ["MQTT_PORT"] = str(args.mqtt_port)

@@ -95,55 +95,88 @@ This single command starts the entire project:
 
 ---
 
-## 🐳 Deployment Guide
+## 🚀 Deployment Guide
 
-### Option 1: Docker Deployment (Recommended)
+### Option 1: Cloud Platforms (Render, Heroku, etc.) — Recommended
 
-Create a `Dockerfile` for containerized execution of the unified script:
+You can easily deploy the application directly to cloud platforms like Render without using Docker:
 
-```dockerfile
-FROM python:3.9-slim
+1. **Create a Web Service** on Render and link your GitHub repository.
+2. **Configure the Environment**:
+   - **Environment/Runtime**: `Python`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: 
+     - **With simulated publisher**: `python main.py`
+     - **Without simulated publisher (recommended for production)**: `python main.py --no-publisher`
+3. **Environment Variables** (Optional, configure under Render Dashboard -> Environment):
+   - `PYTHON_VERSION`: `3.11` (or rely on the auto-detected `.python-version` file).
+   - `MQTT_BROKER`: Address of your MQTT broker.
+   - `MQTT_PORT`: Port of your MQTT broker.
+   - `MQTT_USER`: Username for your MQTT broker.
+   - `MQTT_PASSWORD`: Password for your MQTT broker.
 
-WORKDIR /app
+> [!NOTE]
+> When running on Render, the system automatically detects the assigned `$PORT` environment variable and routes public traffic directly to the Panel dashboard. The FastAPI backend runs on an internal port (e.g. `8000`), allowing the Panel server to query it locally within the container.
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+---
 
-COPY . .
+### Option 2: Production Systemd Service (Linux VPS)
 
-EXPOSE 8000 5006
+If you are deploying on a Linux VPS (e.g., Ubuntu/Debian) without Docker:
 
-CMD ["python", "main.py"]
-```
+1. **Create a Systemd Service File**:
+   Create a service file at `/etc/systemd/system/plantsense.service` to keep the application running persistently in the background:
 
-Build and run:
-```bash
-docker build -t plantsense-dashboard .
-docker run -d -p 8000:8000 -p 5006:5006 --name plantsense plantsense-dashboard
-```
+   ```ini
+   [Unit]
+   Description=PlantSense Unified Application Stack
+   After=network.target
 
-### Option 2: Production Systemd Service
+   [Service]
+   User=ubuntu
+   WorkingDirectory=/var/www/PlantSense
+   # To include simulated publisher:
+   # ExecStart=/var/www/PlantSense/.venv/bin/python main.py
+   # To run without simulated publisher:
+   ExecStart=/var/www/PlantSense/.venv/bin/python main.py --no-publisher
+   Restart=always
 
-When deploying on Linux VPS (e.g., Ubuntu/Debian):
+   [Install]
+   WantedBy=multi-user.target
+   ```
 
-1. Run the unified `main.py` script as a persistent background service using systemd:
+2. **Enable and Start the Service**:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable plantsense.service
+   sudo systemctl start plantsense.service
+   ```
 
-```ini
-[Unit]
-Description=PlantSense Unified Application Stack
-After=network.target
+3. **Configure Nginx Reverse Proxy**:
+   Configure Nginx to proxy external web traffic directly to your Panel dashboard port (default: `5006`).
 
-[Service]
-User=ubuntu
-WorkingDirectory=/var/www/PlantSense
-ExecStart=/var/www/PlantSense/.venv/bin/python main.py
-Restart=always
+---
 
-[Install]
-WantedBy=multi-user.target
-```
+### Option 3: Docker Deployment
 
-2. Configure Nginx reverse proxy to route `/` to `localhost:5006` and `/api` to `localhost:8000`.
+If you prefer to deploy containerized:
+
+1. **Create a `Dockerfile`** in the root directory:
+   ```dockerfile
+   FROM python:3.11-slim
+   WORKDIR /app
+   COPY requirements.txt .
+   RUN pip install --no-cache-dir -r requirements.txt
+   COPY . .
+   EXPOSE 8000 5006
+   CMD ["python", "main.py", "--no-publisher"]
+   ```
+
+2. **Build and Run the Container**:
+   ```bash
+   docker build -t plantsense-dashboard .
+   docker run -d -p 8000:8000 -p 5006:5006 --name plantsense plantsense-dashboard
+   ```
 
 ---
 
