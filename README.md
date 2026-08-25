@@ -34,16 +34,10 @@
 
 ```
 PanelProject/
-├── Backend-server/
-│   ├── server.py         # FastAPI application & MQTT subscriber
-│   ├── seed_data.py      # Script to seed realistic historical data
-│   └── mqtt_data.db      # SQLite database file
-├── Client/
-│   └── dashboard.py      # Interactive Panel & hvPlot dashboard app
-├── MQTT-server/
-│   └── publisher.py      # Simulated MQTT plant sensor publisher
-├── requirements.txt      # Python package dependencies
-└── README.md             # Project documentation
+├── main.py              # Consolidated single-file application stack (FastAPI, MQTT, Panel UI, Seeding)
+├── mqtt_data.db         # SQLite database file containing telemetry data
+├── requirements.txt     # Python package dependencies
+└── README.md            # Project documentation
 ```
 
 ---
@@ -60,34 +54,26 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. (Optional) Seed Historical Data
+### 2. Start all services in a single command
 
-Seed 7 days of realistic 5-minute interval telemetry for testing forecasts:
+Run the unified application stack:
 
 ```bash
-python Backend-server/seed_data.py --days 7 --clear
+python main.py
 ```
 
-### 3. Start Services
+This single command starts the entire project:
+- **FastAPI backend** (API running at `http://localhost:8000`)
+- **Simulated MQTT Plant Publisher** (publishing sensor updates to broker)
+- **Panel Dashboard** (served at `http://localhost:5006`)
+- **Automated Seeding**: If the database is missing or empty, it automatically seeds 7 days of historical sensor data so charts render immediately.
 
-#### Step 1: Start FastAPI Backend Server
-```bash
-python Backend-server/server.py
-```
-*API running at `http://localhost:8000`*
-
-#### Step 2: Start Panel Dashboard
-In a separate terminal (with `.venv` activated):
-```bash
-panel serve Client/dashboard.py --port 5006 --allow-websocket-origin="*"
-```
-*Dashboard running at `http://localhost:5006/dashboard`*
-
-#### Step 3: (Optional) Run Simulated MQTT Publisher
-If you have an active MQTT broker (e.g. Mosquitto) running locally on port 1883:
-```bash
-python MQTT-server/publisher.py --interval 5
-```
+#### Advanced CLI Options:
+- `--seed`: Clear the database and force a re-seed of historical data.
+- `--days <int>`: Set the number of days of history to seed (default: 7).
+- `--no-publisher`: Run the backend and dashboard without starting the simulated MQTT sensor publisher.
+- `--backend-port <int>`: Specify a custom FastAPI backend port (default: 8000).
+- `--dashboard-port <int>`: Specify a custom Panel dashboard port (default: 5006).
 
 ---
 
@@ -95,7 +81,7 @@ python MQTT-server/publisher.py --interval 5
 
 ### Option 1: Docker Deployment (Recommended)
 
-Create a `Dockerfile` for containerized execution:
+Create a `Dockerfile` for containerized execution of the unified script:
 
 ```dockerfile
 FROM python:3.9-slim
@@ -109,7 +95,7 @@ COPY . .
 
 EXPOSE 8000 5006
 
-CMD ["sh", "-c", "python Backend-server/server.py & panel serve Client/dashboard.py --port 5006 --allow-websocket-origin='*'"]
+CMD ["python", "main.py"]
 ```
 
 Build and run:
@@ -122,25 +108,24 @@ docker run -d -p 8000:8000 -p 5006:5006 --name plantsense plantsense-dashboard
 
 When deploying on Linux VPS (e.g., Ubuntu/Debian):
 
-1. Set up Gunicorn/Uvicorn workers for FastAPI backend behind Nginx reverse proxy.
-2. Run Panel dashboard as a persistent background service using systemd:
+1. Run the unified `main.py` script as a persistent background service using systemd:
 
 ```ini
 [Unit]
-Description=PlantSense Panel Dashboard
+Description=PlantSense Unified Application Stack
 After=network.target
 
 [Service]
 User=ubuntu
 WorkingDirectory=/var/www/PlantSense
-ExecStart=/var/www/PlantSense/.venv/bin/panel serve Client/dashboard.py --port 5006 --allow-websocket-origin="yourdomain.com"
+ExecStart=/var/www/PlantSense/.venv/bin/python main.py
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-3. Configure Nginx reverse proxy to route `/` to `localhost:5006` and `/api` to `localhost:8000`.
+2. Configure Nginx reverse proxy to route `/` to `localhost:5006` and `/api` to `localhost:8000`.
 
 ---
 

@@ -1,47 +1,29 @@
-import os
-import json
-import sqlite3
-import threading
 import datetime
+import json
+import os
+import threading
 import time
 from typing import List, Optional
-
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
+from fastapi.responses import HTMLResponse
 
-BASE_DIR = os.path.dirname(__file__)
-DB_PATH = os.path.join(BASE_DIR, "mqtt_data.db")
+from plantsense.config import PLANT_LOCATIONS
+from plantsense.database import get_db, db_lock, insert_message
 
-conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute(
-    """
-    CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        device_id TEXT,
-        moisture REAL,
-        temperature REAL,
-        timestamp TEXT,
-        raw TEXT
-    )
-    """
-)
-cursor.execute(
-    "CREATE INDEX IF NOT EXISTS idx_device_timestamp ON messages (device_id, timestamp)"
-)
-conn.commit()
-db_lock = threading.Lock()
+# FastAPI app instance
+app = FastAPI(title="MQTT to SQLite API")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-def insert_message(device_id: str, moisture, temperature, timestamp: str, raw: str):
-    with db_lock:
-        cursor.execute(
-            "INSERT INTO messages (device_id, moisture, temperature, timestamp, raw) VALUES (?, ?, ?, ?, ?)",
-            (device_id, moisture, temperature, timestamp, raw),
-        )
-        conn.commit()
+# MQTT connection control for background reconnect attempts
+try:
+    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+except AttributeError:
+    mqtt_client = mqtt.Client()
+mqtt_stop_event = threading.Event()
+mqtt_loop_started = False
+
 
 def on_message(client, userdata, msg):
     try:
@@ -56,46 +38,53 @@ def on_message(client, userdata, msg):
     except Exception as e:
         print("Failed to process MQTT message:", e)
 
-mqtt_client = mqtt.Client()
+
 mqtt_client.on_message = on_message
 
-# Connection control for background reconnect attempts
-mqtt_stop_event = threading.Event()
-mqtt_loop_started = False
 
-def _connect_loop(broker: str, port: int, topic: str = "plant/+/sensor", retry_interval: int = 5):
+def _connect_loop(broker: str, port: int, topic: str = "plant/+/sensor", retry_interval: int = 5, username: str = None, password: str = None):
     global mqtt_loop_started
     while not mqtt_stop_event.is_set():
         try:
+            if port == 8883:
+                import ssl
+                mqtt_client.tls_set(tls_version=ssl.PROTOCOL_TLSv1_2)
+            if username and password:
+                mqtt_client.username_pw_set(username, password)
+
             mqtt_client.connect(broker, port)
             mqtt_client.subscribe(topic)
             if not mqtt_loop_started:
                 mqtt_client.loop_start()
                 mqtt_loop_started = True
-            print(f"MQTT connected to {broker}:{port} and subscribed to {topic}")
+            print(f"MQTT subscriber connected to {broker}:{port} and subscribed to {topic}")
             return
         except Exception as e:
-            print(f"MQTT connect failed: {e}; retrying in {retry_interval}s")
+            print(f"MQTT subscriber connect failed: {e}; retrying in {retry_interval}s")
             time.sleep(retry_interval)
-
-app = FastAPI(title="MQTT to SQLite API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 @app.on_event("startup")
 def startup_event():
     broker = os.environ.get("MQTT_BROKER", "localhost")
     port = int(os.environ.get("MQTT_PORT", "1883"))
-    # Start a background thread that will keep attempting to connect to the broker.
-    t = threading.Thread(target=_connect_loop, args=(broker, port), daemon=True)
+    username = os.environ.get("MQTT_USER")
+    password = os.environ.get("MQTT_PASSWORD")
+    t = threading.Thread(
+        target=_connect_loop,
+        args=(broker, port),
+        kwargs={"username": username, "password": password},
+        daemon=True
+    )
     t.start()
-    print("MQTT background connect thread started")
+    print("MQTT subscriber background connect thread started")
 
 
 @app.on_event("shutdown")
 def shutdown_event():
     mqtt_stop_event.set()
     try:
+        global mqtt_loop_started
         if mqtt_loop_started:
             mqtt_client.loop_stop()
     except Exception:
@@ -104,7 +93,6 @@ def shutdown_event():
         mqtt_client.disconnect()
     except Exception:
         pass
-    conn.close()
 
 
 @app.get("/")
@@ -114,6 +102,7 @@ def health():
 
 @app.get("/data")
 def get_data(limit: int = 100):
+    conn, cursor = get_db()
     with db_lock:
         cursor.execute(
             "SELECT id, device_id, moisture, temperature, timestamp FROM messages ORDER BY id DESC LIMIT ?",
@@ -126,30 +115,20 @@ def get_data(limit: int = 100):
     ]
 
 
-# ---------------------------------------------------------------------------
-# New API endpoints for the interactive dashboard
-# ---------------------------------------------------------------------------
-
 @app.get("/api/plants")
 def get_plants():
     """Return a sorted list of distinct plant / device IDs."""
+    conn, cursor = get_db()
     with db_lock:
         cursor.execute("SELECT DISTINCT device_id FROM messages ORDER BY device_id")
         rows = cursor.fetchall()
     return [r[0] for r in rows]
 
 
-# Static plant location metadata — matches the publisher / seed configs
-PLANT_LOCATIONS = {
-    "plant-001": {"name": "Greenhouse A", "lat": 12.9352, "lng": 77.6245},
-    "plant-002": {"name": "Rooftop Garden", "lat": 12.9378, "lng": 77.6270},
-    "plant-003": {"name": "Open Field B", "lat": 12.9340, "lng": 77.6290},
-}
-
-
 @app.get("/api/plants/locations")
 def get_plant_locations():
     """Return location metadata for each known plant."""
+    conn, cursor = get_db()
     with db_lock:
         cursor.execute("SELECT DISTINCT device_id FROM messages ORDER BY device_id")
         device_ids = [r[0] for r in cursor.fetchall()]
@@ -173,14 +152,7 @@ def get_filtered_data(
     end: Optional[str] = None,
     limit: int = 5000,
 ):
-    """Return sensor data filtered by plant ID and/or datetime range.
-
-    Query params:
-        plant_id  – comma-separated list of device IDs (optional)
-        start     – ISO 8601 start datetime inclusive (optional)
-        end       – ISO 8601 end datetime inclusive (optional)
-        limit     – max rows to return (default 5000)
-    """
+    conn, cursor = get_db()
     clauses: List[str] = []
     params: list = []
 
@@ -211,7 +183,7 @@ def get_filtered_data(
 
 @app.get("/api/summary")
 def get_summary(plant_id: Optional[str] = None):
-    """Return per-plant summary statistics."""
+    conn, cursor = get_db()
     clauses: List[str] = []
     params: list = []
     if plant_id:
@@ -272,8 +244,3 @@ def dashboard():
     </html>
     """
     return HTMLResponse(content=html)
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
