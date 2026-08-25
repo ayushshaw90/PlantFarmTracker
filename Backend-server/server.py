@@ -260,7 +260,8 @@ def get_summary(plant_id: Optional[str] = None):
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
-    panel_url = os.environ.get("PANEL_URL", "http://localhost:5006")
+    panel_port = os.environ.get("PANEL_PORT", os.environ.get("PANEL_URL", "http://localhost:5006").split(":")[-1])
+    panel_url = os.environ.get("PANEL_URL", f"http://localhost:{panel_port}")
     html = f"""
     <html>
       <body>
@@ -274,4 +275,5 @@ def dashboard():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
